@@ -1,5 +1,5 @@
 /* =========================================================
-   VÉRTICE | INTELIGÊNCIA FINANCEIRA
+   MASSU | INTELIGÊNCIA FINANCEIRA
    Cadastro e leitura de investimentos no Supabase
    ========================================================= */
 
@@ -58,6 +58,30 @@
     LCA: "orange-bg",
   };
 
+  const PALETA_CARTEIRA = [
+    "#ea580c",
+    "#eab308",
+    "#2563eb",
+    "#dc2626",
+    "#7c3aed",
+    "#0891b2",
+    "#be123c",
+    "#16a34a",
+  ];
+
+  function corDoTipo(tipo, indice) {
+    const coresFixas = {
+      CDB: "#2563eb",
+      "LCI/LCA": "#ea580c",
+      "Tesouro Direto": "#eab308",
+      Ações: "#dc2626",
+      Fundos: "#7c3aed",
+      Outro: "#0891b2",
+    };
+
+    return coresFixas[tipo] || PALETA_CARTEIRA[indice % PALETA_CARTEIRA.length];
+  }
+
   // Rentabilidade exibida: taxa + indexador (ex.: 100% CDI)
   function rentabilidadeBR(item) {
     const taxa = taxaBR(item.taxa_percentual);
@@ -88,14 +112,29 @@
   }
 
   function iniciarAplicacao() {
+    const menu = document.querySelector("#sidebar");
+    const botaoMenu = document.querySelector("#menu-toggle");
+
+    botaoMenu?.addEventListener("click", () => {
+      const aberto = menu.classList.toggle("open");
+      botaoMenu.setAttribute("aria-expanded", String(aberto));
+      botaoMenu.setAttribute(
+        "aria-label",
+        aberto ? "Fechar menu" : "Abrir menu",
+      );
+    });
+
     // Os ids abaixo precisam ser iguais aos do index.html
     const tabela = document.querySelector("#investment-table");
     const estadoVazio = document.querySelector("#empty-state");
     const botaoNovo = document.querySelector("#add-investment");
     const botaoExportar = document.querySelector("#export-button");
+    const botaoRegistrarSaldo = document.querySelector("#record-balance");
     const campoPesquisa = document.querySelector("#investment-search");
 
     let investimentos = [];
+    let historicoPatrimonio = [];
+    let suporteMovimentacoes = true;
     let usuarioAtual = null;
     let clienteSupabase = null;
 
@@ -535,13 +574,430 @@
     }
 
     // -----------------------------------------------------
+
+    // -----------------------------------------------------
+    // Atualizar gráfico com a distribuição real da carteira
+    // -----------------------------------------------------
+
+    function atualizarGraficoDistribuicao() {
+      if (typeof Chart === "undefined") return;
+
+      const canvas = document.querySelector(
+        'canvas[data-chart-type="doughnut"]',
+      );
+
+      if (!canvas) return;
+
+      const grafico = Chart.getChart(canvas);
+      if (!grafico) return;
+
+      const grupos = new Map();
+
+      investimentos.forEach((item) => {
+        const tipoOriginal = String(item.tipo || "Outro").trim();
+        const tipoNormalizado = tipoOriginal.toUpperCase();
+
+        const tipo =
+          tipoNormalizado === "LCI" || tipoNormalizado === "LCA"
+            ? "LCI/LCA"
+            : tipoOriginal;
+
+        const valor = Number(item.valor_investido);
+
+        if (!Number.isFinite(valor) || valor <= 0) return;
+
+        grupos.set(tipo, (grupos.get(tipo) || 0) + valor);
+      });
+
+      const tipos = [...grupos.keys()];
+      const valores = [...grupos.values()];
+      const total = valores.reduce((soma, valor) => soma + valor, 0);
+
+      grafico.data.labels = tipos;
+      grafico.data.datasets[0].data = valores;
+      grafico.data.datasets[0].label = "Valor investido";
+      grafico.data.datasets[0].backgroundColor = tipos.map(corDoTipo);
+      grafico.data.datasets[0].borderColor = "#111827";
+      grafico.data.datasets[0].borderWidth = 3;
+
+      const elementoTotal = document.getElementById("allocation-total");
+      const legenda = document.getElementById("allocation-legend");
+
+      if (elementoTotal) {
+        elementoTotal.textContent =
+          total > 0
+            ? `R$ ${total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+            : "R$ 0,00";
+      }
+
+      if (legenda) {
+        legenda.innerHTML = tipos
+          .map((tipo, indice) => {
+            const percentual = total > 0 ? (valores[indice] / total) * 100 : 0;
+            const cor = corDoTipo(tipo, indice);
+
+            return `
+              <div class="legend-item">
+                <span class="legend-name">
+                  <span class="legend-dot" style="background:${cor}"></span>
+                  ${escaparHTML(tipo)}
+                </span>
+                <strong>${percentual.toLocaleString("pt-BR", {
+                  maximumFractionDigits: 2,
+                })}%</strong>
+              </div>
+            `;
+          })
+          .join("");
+      }
+
+      grafico.update();
+    }
+
+    function atualizarGraficoPatrimonio() {
+      const canvas = document.querySelector("#patrimonio-chart");
+      const grafico = canvas && typeof Chart !== "undefined"
+        ? Chart.getChart(canvas)
+        : null;
+
+      if (!grafico) return;
+
+      const filtro = document.querySelector("#period-filter");
+      const meses = Number(filtro?.value || 6);
+      const limite = new Date();
+      limite.setMonth(limite.getMonth() - meses);
+      const registros = historicoPatrimonio.filter((registro) =>
+        new Date(`${registro.data_referencia}T00:00:00`) >= limite,
+      );
+
+      grafico.data.labels = registros.map((registro) =>
+        dataBR(registro.data_referencia),
+      );
+      grafico.data.datasets[0].data = registros.map((registro) =>
+        Number(registro.valor_total),
+      );
+      grafico.update();
+    }
+
+    function atualizarRendimentoMensal(comMovimentacoes) {
+      const valorEl = document.querySelector("#monthly-return");
+      const statusEl = document.querySelector("#monthly-return-status");
+      if (valorEl) valorEl.textContent = dinheiro.format(0);
+
+      const hoje = new Date();
+      const inicioMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-01`;
+      const registrosOrdenados = [...historicoPatrimonio].sort((a, b) =>
+        String(a.data_referencia).localeCompare(String(b.data_referencia)),
+      );
+      const doMes = registrosOrdenados.filter((item) =>
+        item.data_referencia >= inicioMes,
+      );
+      const anterior = registrosOrdenados
+        .filter((item) => item.data_referencia < inicioMes)
+        .at(-1);
+      const abertura = anterior || doMes[0];
+      const fechamento = doMes.at(-1);
+
+      if (!abertura || !fechamento || abertura === fechamento) {
+        if (statusEl) {
+          if (historicoPatrimonio.length === 1) {
+            statusEl.textContent =
+              `Base inicial de ${dinheiro.format(Number(abertura.valor_total))} — atualize em outra data para calcular o rendimento`;
+          } else if (abertura) {
+            statusEl.textContent =
+              "Atualize o saldo novamente em outra data para calcular o rendimento";
+          } else {
+            statusEl.textContent = "Atualize o saldo inicial deste mês";
+          }
+        }
+        return;
+      }
+
+      const indiceAbertura = registrosOrdenados.indexOf(abertura);
+      const indiceFechamento = registrosOrdenados.indexOf(fechamento);
+      const periodo = registrosOrdenados.slice(
+        indiceAbertura + 1,
+        indiceFechamento + 1,
+      );
+      let movimentacoes = 0;
+
+      if (comMovimentacoes && periodo.some((item) => item.movimentacao_liquida == null)) {
+        if (statusEl) {
+          statusEl.textContent =
+            "Falta informar aportes menos resgates em algum saldo";
+        }
+        return;
+      }
+
+      if (comMovimentacoes) {
+        movimentacoes = periodo.reduce(
+          (soma, item) => soma + Number(item.movimentacao_liquida),
+          0,
+        );
+      }
+
+      const rendimento =
+        Number(fechamento.valor_total) -
+        Number(abertura.valor_total) -
+        movimentacoes;
+
+      if (valorEl) valorEl.textContent = dinheiro.format(rendimento);
+      if (statusEl && comMovimentacoes) {
+        statusEl.textContent = `Variação ajustada por aportes/resgates: ${dataBR(abertura.data_referencia)} a ${dataBR(fechamento.data_referencia)}`;
+      } else if (statusEl) {
+        statusEl.textContent =
+          "Migração pendente no Supabase — cálculo baseado apenas na variação do saldo";
+      }
+    }
+
+    async function carregarHistoricoPatrimonio() {
+      if (!clienteSupabase || !usuarioAtual) return;
+
+      let data;
+      let error;
+      let comMovimentacoes = true;
+
+      try {
+        ({ data, error } = await clienteSupabase
+          .from("historico_patrimonio")
+          .select("data_referencia, valor_total, movimentacao_liquida")
+          .eq("user_id", usuarioAtual.id)
+          .order("data_referencia", { ascending: true }));
+
+        if (error && String(error.message).includes("movimentacao_liquida")) {
+          comMovimentacoes = false;
+          ({ data, error } = await clienteSupabase
+            .from("historico_patrimonio")
+            .select("data_referencia, valor_total")
+            .eq("user_id", usuarioAtual.id)
+            .order("data_referencia", { ascending: true }));
+        }
+      } catch (erro) {
+        error = erro;
+      }
+
+      if (error) {
+        console.error("Erro ao consultar histórico do patrimônio:", error);
+        limparHistoricoPatrimonio();
+        const variacao = document.querySelector("#patrimonio-variacao");
+        if (variacao) variacao.textContent = "Histórico indisponível";
+        return;
+      }
+
+      suporteMovimentacoes = comMovimentacoes;
+      historicoPatrimonio = (Array.isArray(data) ? data : []).sort((a, b) =>
+        String(a.data_referencia).localeCompare(String(b.data_referencia)),
+      );
+
+      if (historicoPatrimonio.length === 0) {
+        const patrimonioAtual = investimentos.reduce((total, item) => {
+          const valor = Number(item.valor_investido);
+          return total + (Number.isFinite(valor) ? valor : 0);
+        }, 0);
+
+        if (patrimonioAtual > 0) {
+          const hoje = new Date();
+          const dataReferencia = `${hoje.getFullYear()}-${String(
+            hoje.getMonth() + 1,
+          ).padStart(2, "0")}-${String(hoje.getDate()).padStart(
+            2,
+            "0",
+          )}`;
+          const novoRegistro = {
+            user_id: usuarioAtual.id,
+            data_referencia: dataReferencia,
+            valor_total: patrimonioAtual,
+          };
+
+          if (comMovimentacoes) {
+            novoRegistro.movimentacao_liquida = 0;
+          }
+
+          try {
+            const { error: erroInicial } = await clienteSupabase
+              .from("historico_patrimonio")
+              .insert(novoRegistro);
+
+            if (!erroInicial) {
+              await carregarHistoricoPatrimonio();
+              return;
+            }
+
+            console.error(
+              "Não foi possível criar o saldo inicial:",
+              erroInicial,
+            );
+          } catch (erroInicial) {
+            console.error(
+              "Erro inesperado ao criar o saldo inicial:",
+              erroInicial,
+            );
+          }
+        }
+      }
+
+      const saldoAtual = historicoPatrimonio.at(-1);
+      const patrimonioGrafico = document.querySelector("#patrimonio-atual");
+      const variacao = document.querySelector("#patrimonio-variacao");
+      const saldoFormatado = saldoAtual
+        ? dinheiro.format(Number(saldoAtual.valor_total))
+        : "—";
+
+      if (patrimonioGrafico) patrimonioGrafico.textContent = saldoFormatado;
+      if (variacao) {
+        variacao.textContent = saldoAtual
+          ? `${historicoPatrimonio.length} registro(s) no histórico`
+          : "Histórico ainda não registrado";
+      }
+
+      atualizarGraficoPatrimonio();
+      atualizarRendimentoMensal(comMovimentacoes);
+    }
+
+    function limparHistoricoPatrimonio() {
+      historicoPatrimonio = [];
+      const patrimonioGrafico = document.querySelector("#patrimonio-atual");
+      const variacao = document.querySelector("#patrimonio-variacao");
+      const rendimento = document.querySelector("#monthly-return");
+      const statusRendimento = document.querySelector("#monthly-return-status");
+
+      if (patrimonioGrafico) patrimonioGrafico.textContent = "—";
+      if (variacao) variacao.textContent = "Histórico ainda não registrado";
+      if (rendimento) rendimento.textContent = "—";
+      if (statusRendimento) statusRendimento.textContent = "Entre para consultar o rendimento";
+      atualizarGraficoPatrimonio();
+    }
+
+    function lerValorMonetario(texto) {
+      const valor = String(texto)
+        .trim()
+        .replace(/[^\d,.-]/g, "")
+        .replace(/\.(?=.*[,])/g, "")
+        .replace(",", ".");
+      return valor ? Number(valor) : NaN;
+    }
+
+    async function registrarSaldo() {
+      if (!clienteSupabase || !usuarioAtual) {
+        mensagem("Entre na sua conta para registrar o saldo.", "erro");
+        return;
+      }
+
+      const patrimonioAtual = investimentos.reduce((total, item) => {
+        const valor = Number(item.valor_investido);
+        return total + (Number.isFinite(valor) ? valor : 0);
+      }, 0);
+      const saldoPadrao = patrimonioAtual.toLocaleString("pt-BR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      const saldoTexto = window.prompt(
+        "Informe o saldo total atual da carteira (R$):",
+        saldoPadrao,
+      );
+      if (saldoTexto === null) return;
+      const valorTotal = lerValorMonetario(saldoTexto);
+      if (!Number.isFinite(valorTotal) || valorTotal < 0) {
+        mensagem("Informe um saldo válido, igual ou maior que zero.", "erro");
+        return;
+      }
+
+      const fluxoTexto = window.prompt(
+        "Informe aportes menos resgates desde o saldo anterior (R$). Ex.: 5,00 de aporte ou -2,00 de resgate; 0 se não houve movimentação:",
+        "0,00",
+      );
+      if (fluxoTexto === null) return;
+      const movimentacaoLiquida = lerValorMonetario(fluxoTexto);
+      if (!Number.isFinite(movimentacaoLiquida)) {
+        mensagem("Informe um valor válido para aportes menos resgates.", "erro");
+        return;
+      }
+
+      const agora = new Date();
+      const dataReferencia = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+
+      let error;
+      try {
+        const registroExiste = historicoPatrimonio.some(
+          (item) => item.data_referencia === dataReferencia,
+        );
+
+        if (registroExiste) {
+          const atualizacao = {
+            valor_total: valorTotal,
+          };
+
+          if (suporteMovimentacoes) {
+            atualizacao.movimentacao_liquida = movimentacaoLiquida;
+          }
+
+          ({ error } = await clienteSupabase
+            .from("historico_patrimonio")
+            .update(atualizacao)
+            .eq("user_id", usuarioAtual.id)
+            .eq("data_referencia", dataReferencia));
+        } else {
+          const novoRegistro = {
+            user_id: usuarioAtual.id,
+            data_referencia: dataReferencia,
+            valor_total: valorTotal,
+          };
+
+          if (suporteMovimentacoes) {
+            novoRegistro.movimentacao_liquida = movimentacaoLiquida;
+          }
+
+          ({ error } = await clienteSupabase
+            .from("historico_patrimonio")
+            .insert(novoRegistro));
+        }
+      } catch (erro) {
+        console.error("Erro ao registrar saldo e movimentações:", erro);
+        mensagem("Não foi possível registrar o saldo. Tente novamente.", "erro");
+        return;
+      }
+
+      if (error) {
+        console.error("Erro ao registrar saldo e movimentações:", error);
+        mensagem(
+          "Não foi possível atualizar o histórico. Execute a migração do Supabase e confira as políticas RLS de INSERT/UPDATE.",
+          "erro",
+        );
+        return;
+      }
+
+      await carregarHistoricoPatrimonio();
+      mensagem("Saldo atualizado.");
+    }
     // Atualizar tabela com dados reais
+    // -----------------------------------------------------
+
+    // -----------------------------------------------------
+    // Atualizar gráfico com a distribuição real da carteira
     // -----------------------------------------------------
 
     function atualizarTabela() {
       if (!tabela) return;
 
       window.verticeInvestimentos = investimentos;
+      const patrimonioAtual = investimentos.reduce((total, item) => {
+        const valor = Number(item.valor_investido);
+        return total + (Number.isFinite(valor) ? valor : 0);
+      }, 0);
+
+      const patrimonioFormatado = usuarioAtual
+        ? patrimonioAtual.toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL",
+          })
+        : "—";
+      const patrimonioTopo = document.getElementById("patrimonio");
+
+      if (patrimonioTopo) {
+        patrimonioTopo.textContent = patrimonioFormatado;
+      }
+
+      atualizarGraficoDistribuicao();
 
       tabela.innerHTML = "";
 
@@ -633,9 +1089,11 @@
 
         if (error) {
           console.error("Erro ao consultar investimentos:", error);
-
-          investimentos = [];
-          atualizarTabela();
+          if (tabela) {
+            tabela.innerHTML = `
+              <tr><td colspan="5">Falha ao carregar os investimentos. Tente novamente.</td></tr>
+            `;
+          }
 
           mensagem(
             "Não foi possível carregar os investimentos. Veja o console (F12).",
@@ -646,7 +1104,9 @@
         }
 
         investimentos = Array.isArray(data) ? data : [];
+
         atualizarTabela();
+        await carregarHistoricoPatrimonio();
 
         return true;
       } catch (erro) {
@@ -687,6 +1147,7 @@
         } else {
           investimentos = [];
           atualizarTabela();
+          limparHistoricoPatrimonio();
         }
 
         clienteSupabase.auth.onAuthStateChange((evento, sessao) => {
@@ -700,6 +1161,7 @@
           if (evento === "SIGNED_OUT") {
             investimentos = [];
             atualizarTabela();
+            limparHistoricoPatrimonio();
           }
         });
       } catch (erro) {
@@ -844,6 +1306,10 @@
 
                 valor = String(valor).replace(/"/g, '""');
 
+                if (/^[\t\r\n ]*[=+\-@]/.test(valor)) {
+                  valor = `'${valor}`;
+                }
+
                 return `"${valor}"`;
               })
               .join(";"),
@@ -858,7 +1324,7 @@
         const link = document.createElement("a");
 
         link.href = url;
-        link.download = "vertice-investimentos.csv";
+        link.download = "massu-investimentos.csv";
 
         document.body.appendChild(link);
         link.click();
@@ -893,8 +1359,14 @@
     }
 
     // -----------------------------------------------------
-    // Gráficos demonstrativos existentes
+    // Inicializar gráficos sem dados demonstrativos
     // -----------------------------------------------------
+
+    document
+      .querySelector("#period-filter")
+      ?.addEventListener("change", atualizarGraficoPatrimonio);
+
+    botaoRegistrarSaldo?.addEventListener("click", registrarSaldo);
 
     if (typeof Chart !== "undefined") {
       document.querySelectorAll("canvas").forEach((canvas) => {
@@ -905,27 +1377,30 @@
 
         const tipo = canvas.dataset.chartType || "line";
 
-        const rotulos = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun"];
-
         new Chart(contexto, {
           type: tipo,
           data: {
-            labels: rotulos,
+            labels: [],
             datasets: [
               {
-                label: "Demonstração",
-                data: [12, 19, 15, 24, 21, 30],
+                label:
+                  tipo === "line"
+                    ? "Evolução do patrimônio"
+                    : "Valor investido",
+                data: [],
                 borderColor: "#60a5fa",
                 backgroundColor:
                   tipo === "line"
                     ? "rgba(96,165,250,.15)"
                     : [
-                        "#60a5fa",
-                        "#34d399",
-                        "#fbbf24",
-                        "#a78bfa",
-                        "#f87171",
-                        "#38bdf8",
+                        "#ea580c",
+                        "#eab308",
+                        "#2563eb",
+                        "#dc2626",
+                        "#7c3aed",
+                        "#0891b2",
+                        "#be123c",
+                        "#16a34a",
                       ],
                 borderWidth: 2,
                 tension: 0.35,
@@ -945,10 +1420,6 @@
         });
       });
     }
-
-    // -----------------------------------------------------
-    // Inicialização
-    // -----------------------------------------------------
 
     prepararFormulario();
     iniciarIntegracaoSupabase();

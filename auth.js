@@ -1,5 +1,5 @@
 /* =========================================================
-   VÉRTICE | INTELIGÊNCIA FINANCEIRA
+   MASSU | INTELIGÊNCIA FINANCEIRA
    Login, criação de conta e saída (Supabase Auth)
    Este arquivo só cuida da conta. A lista de investimentos
    continua no script.js, que reage ao login sozinho.
@@ -188,7 +188,7 @@
     modal.innerHTML = `
       <div class="vertice-login-card" role="dialog" aria-modal="true"
            aria-labelledby="vertice-login-titulo">
-        <h2 id="vertice-login-titulo">Entrar no Vértice</h2>
+        <h2 id="vertice-login-titulo">Entrar no Massu</h2>
         <p style="color:#9ca3af;font-size:14px;line-height:1.5">
           Use o e-mail da sua conta para ver seus investimentos.
         </p>

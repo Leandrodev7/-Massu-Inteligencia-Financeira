@@ -252,17 +252,6 @@ select:focus-visible {
   gap: 14px;
 }
 
-.demo-badge {
-  color: var(--orange);
-  border: 1px solid #59402b;
-  background: #281e16;
-  border-radius: 5px;
-  padding: 4px 7px;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 1px;
-}
-
 .avatar {
   width: 35px;
   height: 35px;
@@ -353,27 +342,6 @@ h1 {
   color: #101711;
   border: 1px solid #65d8a7;
   background: var(--green);
-}
-
-.demo-notice {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  margin-bottom: 18px;
-  padding: 11px 14px;
-  border: 1px solid #443923;
-  border-radius: 9px;
-  background: #211d16;
-  color: #e4c987;
-}
-
-.demo-notice > span {
-  font-size: 17px;
-}
-
-.demo-notice p {
-  margin: 0;
-  font-size: 11px;
 }
 
 .metrics-grid {

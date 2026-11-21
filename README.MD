@@ -1,56 +1,38 @@
-Vértice — Inteligência Financeira
+# Massu — Inteligência Financeira
 
-Plataforma de controle e análise de investimentos, desenvolvida como projeto de estudo e evolução prática em desenvolvimento de software.
+Aplicação web para acompanhar investimentos cadastrados por cada usuário.
 
-Sobre o projeto
+## Funcionalidades
 
-O Vértice tem como objetivo reunir informações financeiras em uma interface organizada, facilitando o acompanhamento do patrimônio, da rentabilidade e da distribuição dos investimentos.
+- Cadastro, consulta e exclusão de investimentos no Supabase.
+- Login, criação de conta e logout pelo Supabase Auth.
+- Filtro da tabela e exportação CSV.
+- Distribuição da carteira calculada pelos investimentos cadastrados, agrupando LCI e LCA.
+- Gráfico de evolução alimentado pela tabela existente `historico_patrimonio`, lendo `data_referencia` e `valor_total`.
+- Registro manual do saldo e dos aportes líquidos para cálculo do rendimento.
 
-O projeto está sendo desenvolvido de forma incremental, priorizando uma interface intuitiva, código organizado e a futura integração com serviços de dados financeiros.
+## Cálculos e limites atuais
 
-Funcionalidades atuais
+- O cartão **Capital investido** soma `valor_investido`; não representa cotação atual nem inclui rendimentos.
+- O rendimento mensal usa o último saldo anterior ao mês como abertura e o último saldo do mês como fechamento. A migração `supabase/migrations/20261120_historico_movimentacao_liquida.sql` adiciona a coluna necessária para ajustar aportes e resgates.
+- Execute essa migração no SQL Editor do Supabase antes de registrar os saldos. Ela também cria as políticas de inserção e atualização do histórico para o usuário autenticado.
+- Registros antigos ficam com movimentação desconhecida; o rendimento só aparece depois que os novos saldos e fluxos necessários forem registrados.
+- O saldo é informado manualmente e precisa refletir uma avaliação atual dos investimentos; a aplicação ainda não consulta cotações de mercado.
+- SELIC, CDI e IPCA ainda aguardam integração com fontes oficiais.
+- Indicadores demonstrativos e linhas fictícias foram removidos da interface.
 
-- Dashboard financeiro com indicadores de patrimônio e rentabilidade.
-- Gráfico interativo de evolução patrimonial.
-- Gráfico de distribuição da carteira.
-- Tabela de investimentos com campo de busca.
-- Filtro de período do gráfico.
-- Exportação de um resumo em CSV.
-- Interface adaptável para diferentes tamanhos de tela.
-- Tema escuro com identidade visual própria.
+## Tecnologias
 
-Tecnologias utilizadas
+- HTML5, CSS3 e JavaScript.
+- Chart.js.
+- Supabase JavaScript v2, Auth e banco de dados.
 
-- HTML5
-- CSS3
-- JavaScript
-- Chart.js
+## Segurança
 
-Status do desenvolvimento
+As consultas de investimentos e do histórico filtram pelo usuário autenticado. A proteção efetiva depende das políticas RLS configuradas no Supabase; confirme as políticas de leitura, inserção e exclusão antes de considerar a segurança validada.
 
-Em desenvolvimento.
+As configurações de conexão ficam em `supabase.js`. Não publique chaves secretas no navegador; use somente uma chave publicável com RLS habilitada.
 
-A versão atual apresenta a interface e suas principais interações utilizando dados demonstrativos. A integração com banco de dados, autenticação de usuários e dados econômicos atualizados faz parte das próximas etapas planejadas.
+## Execução local
 
-Os valores exibidos nesta versão não representam investimentos reais nem devem ser utilizados para decisões financeiras.
-
-Próximas etapas
-
-- Integrar banco de dados para persistência das informações.
-- Implementar cadastro e autenticação de usuários.
-- Permitir cadastrar, editar e acompanhar investimentos.
-- Integrar indicadores econômicos de fontes confiáveis.
-- Desenvolver e validar os cálculos financeiros.
-- Implementar controles de segurança e acesso aos dados.
-
-Objetivo de aprendizado
-
-Este projeto faz parte da minha jornada de aprendizado em desenvolvimento de sistemas, com foco em fundamentos de programação, construção de interfaces, integração com bancos de dados e desenvolvimento de aplicações úteis.
-
-O desenvolvimento conta com apoio de ferramentas de inteligência artificial para estudo, explicação de conceitos, revisão e resolução de problemas.
-
-Autor
-
-Leandro Dev7
-
-Projeto pessoal desenvolvido para aprendizado e evolução contínua em desenvolvimento de software.
+Abra `index.html` com um servidor estático local. O navegador precisa acessar a internet para carregar as bibliotecas CDN e o projeto Supabase.
